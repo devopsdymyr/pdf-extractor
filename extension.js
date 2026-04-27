@@ -6,20 +6,31 @@ function activate(context) {
 	const extractCommand = vscode.commands.registerCommand(
 		'pdfExtractor.extract',
 		async (uri) => {
-			if (!uri || !uri.fsPath.endsWith('.pdf')) {
+			if (!uri || !uri.fsPath || !uri.fsPath.toLowerCase().endsWith('.pdf')) {
 				vscode.window.showErrorMessage('Please right-click a PDF file');
 				return;
 			}
 
-			const buffer = fs.readFileSync(uri.fsPath);
-			const result = await pdf(buffer);
+			try {
+				const buffer = await fs.promises.readFile(uri.fsPath);
+				const result = await pdf(buffer);
 
-			const doc = await vscode.workspace.openTextDocument({
-				content: result.text,
-				language: 'text'
-			});
+				const extractedText = (result.text || '').trim();
+				if (!extractedText) {
+					vscode.window.showWarningMessage('No readable text was found in this PDF.');
+					return;
+				}
 
-			vscode.window.showTextDocument(doc);
+				const doc = await vscode.workspace.openTextDocument({
+					content: extractedText,
+					language: 'text'
+				});
+
+				await vscode.window.showTextDocument(doc);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				vscode.window.showErrorMessage(`Failed to extract PDF text: ${message}`);
+			}
 		}
 	);
 

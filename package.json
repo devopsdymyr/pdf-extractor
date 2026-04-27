@@ -1,17 +1,31 @@
 {
   "name": "pdfextractor",
   "publisher": "kathirvel-labs",
-  "displayName": "pdfextractor",
-  "description": "extract pdf from docs",
+  "displayName": "PDF Extractor",
+  "description": "Extract text from PDF files directly from the VS Code Explorer context menu.",
   "version": "0.0.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devopsdymyr/pdf-extractor.git"
+  },
+  "homepage": "https://github.com/devopsdymyr/pdf-extractor#readme",
+  "bugs": {
+    "url": "https://github.com/devopsdymyr/pdf-extractor/issues"
+  },
   "engines": {
     "vscode": "^1.116.0"
   },
-  "categories": [
-    "Other"
+  "keywords": [
+    "pdf",
+    "extract",
+    "text",
+    "pdf-parser",
+    "document"
   ],
-  "activationEvents": [
-    "onCommand:pdfExtractor.extract"
+  "categories": [
+    "Other",
+    "Productivity"
   ],
   "main": "./extension.js",
   "contributes": {

@@ -1,65 +1,46 @@
-# pdfextractor README
+# PDF Extractor
 
-This is the README for your extension "pdfextractor". After writing up a brief description, we recommend including the following sections.
+![PDF Extractor Logo](images/logo1.png)
+
+Extract text from PDF files directly in VS Code.
+
+`PDF Extractor` adds a context menu action in the Explorer so you can right-click a PDF and open its extracted text in a new editor tab.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- Right-click any `.pdf` file in the Explorer and run **Extract Text from PDF**
+- Opens extracted content in a new plain text editor tab
+- Shows clear error/warning messages when extraction fails or no text is found
+- Supports both `.pdf` and `.PDF` file extensions
 
-For example if there is an image subfolder under your extension project workspace:
+## How To Use
 
-\!\[feature X\]\(images/feature-x.png\)
+1. Open a folder in VS Code that contains PDF files.
+2. In the Explorer, right-click a PDF file.
+3. Select **Extract Text from PDF**.
+4. View the extracted text in the new tab.
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## Command
+
+- **Command ID:** `pdfExtractor.extract`
+- **Command Title:** `Extract Text from PDF`
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- VS Code `^1.116.0`
 
-## Extension Settings
+No additional setup is required for users after installing the extension.
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+## Known Limitations
 
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Scanned/image-only PDFs may return little or no text.
+- Complex PDFs (columns, tables, mixed layout) may produce imperfect text order.
+- Large PDFs may take longer to process.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.1
 
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+- Initial release
+- Added Explorer context menu command to extract text from PDF files
+- Added error handling for invalid files and extraction failures
