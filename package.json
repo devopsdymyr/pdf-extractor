@@ -1,9 +1,10 @@
 {
-  "name": "pdfextractor",
+  "name": "pdf-extractor-plus",
   "publisher": "kathirvel-labs",
-  "displayName": "PDF Extractor",
-  "description": "Extract text from PDF files directly from the VS Code Explorer context menu.",
-  "version": "0.0.1",
+  "displayName": "PDF Extractor Plus",
+  "description": "Extract PDF text, batch to .txt, workspace search, rich preview, settings (encoding/line endings), and OCR from images (Tesseract).",
+  "version": "0.0.3",
+  "icon": "images/logo1.ico",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -14,25 +15,106 @@
     "url": "https://github.com/devopsdymyr/pdf-extractor/issues"
   },
   "engines": {
-    "vscode": "^1.116.0"
+    "vscode": "^1.115.0"
   },
   "keywords": [
     "pdf",
     "extract",
     "text",
     "pdf-parser",
-    "document"
+    "document",
+    "batch",
+    "ocr",
+    "tesseract",
+    "search"
   ],
   "categories": [
-    "Other",
-    "Productivity"
+    "Other"
   ],
   "main": "./extension.js",
   "contributes": {
+    "configuration": {
+      "title": "PDF Extractor Plus",
+      "properties": {
+        "pdfExtractor.lineEnding": {
+          "type": "string",
+          "enum": ["auto", "lf", "crlf"],
+          "default": "auto",
+          "description": "Line endings applied when saving extracted text. auto leaves line breaks as extracted."
+        },
+        "pdfExtractor.encoding": {
+          "type": "string",
+          "enum": ["utf8", "utf16le"],
+          "default": "utf8",
+          "description": "Encoding for saved .txt files (UTF-16 includes a BOM)."
+        },
+        "pdfExtractor.pageSeparatorEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Insert a template between pages when the PDF uses form-feed page breaks (\\f)."
+        },
+        "pdfExtractor.pageSeparatorTemplate": {
+          "type": "string",
+          "default": "\n\n--- Page {n} ---\n\n",
+          "description": "Separator between pages; use {n} for the 1-based page number."
+        },
+        "pdfExtractor.defaultOutputFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute folder path for default Save-as-.txt location and batch output. Empty = next to PDF or prompt."
+        },
+        "pdfExtractor.batchRecursive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Batch extract: include PDFs in subfolders of the chosen folder."
+        },
+        "pdfExtractor.searchMaxFiles": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "maximum": 2000,
+          "description": "Maximum PDF files to scan for batch extract and workspace search."
+        },
+        "pdfExtractor.offerOcrWhenEmpty": {
+          "type": "boolean",
+          "default": true,
+          "description": "When a PDF has no embedded text, offer the OCR-from-images flow."
+        },
+        "pdfExtractor.ocrLanguage": {
+          "type": "string",
+          "default": "eng",
+          "description": "Tesseract OCR language code (e.g. eng, fra, deu)."
+        }
+      }
+    },
     "commands": [
       {
         "command": "pdfExtractor.extract",
-        "title": "Extract Text from PDF"
+        "title": "PDF Extractor Plus: Extract Text (Preview)"
+      },
+      {
+        "command": "pdfExtractor.extractAndSave",
+        "title": "PDF Extractor Plus: Extract Text to .txt File"
+      },
+      {
+        "command": "pdfExtractor.copyExtracted",
+        "title": "PDF Extractor Plus: Copy PDF Text to Clipboard"
+      },
+      {
+        "command": "pdfExtractor.previewWebview",
+        "title": "PDF Extractor Plus: Rich Preview (Search)"
+      },
+      {
+        "command": "pdfExtractor.batchExtract",
+        "title": "PDF Extractor Plus: Batch Extract Folder to .txt"
+      },
+      {
+        "command": "pdfExtractor.searchWorkspacePdfs",
+        "title": "PDF Extractor Plus: Search Text in Workspace PDFs"
+      },
+      {
+        "command": "pdfExtractor.ocrFromImages",
+        "title": "PDF Extractor Plus: OCR Text from Image(s)"
       }
     ],
     "menus": {
@@ -40,7 +122,27 @@
         {
           "command": "pdfExtractor.extract",
           "when": "resourceExtname == .pdf",
-          "group": "navigation"
+          "group": "pdf_extractor@1"
+        },
+        {
+          "command": "pdfExtractor.previewWebview",
+          "when": "resourceExtname == .pdf",
+          "group": "pdf_extractor@2"
+        },
+        {
+          "command": "pdfExtractor.extractAndSave",
+          "when": "resourceExtname == .pdf",
+          "group": "pdf_extractor@3"
+        },
+        {
+          "command": "pdfExtractor.copyExtracted",
+          "when": "resourceExtname == .pdf",
+          "group": "pdf_extractor@4"
+        },
+        {
+          "command": "pdfExtractor.batchExtract",
+          "when": "explorerResourceIsFolder",
+          "group": "pdf_extractor_batch@1"
         }
       ]
     }
@@ -48,17 +150,21 @@
   "scripts": {
     "lint": "eslint .",
     "pretest": "npm run lint",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "vsce:package": "vsce package",
+    "vsce:publish": "yes | vsce publish"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "@types/vscode": "^1.116.0",
+    "@types/vscode": "^1.115.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.9.1",
     "eslint": "^9.39.3"
   },
   "dependencies": {
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "tesseract.js": "^5.1.1"
   }
 }
