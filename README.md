@@ -15,7 +15,8 @@ Extract, search, batch-export, and preview PDF text inside VS Code. Optional **O
 | **Workspace search** | Command **Search Text in Workspace PDFs** — extracts each PDF (up to a limit) and lists files containing your query; pick one to open **rich preview**. |
 | **Settings** | `lineEnding`, `encoding` (UTF-8 / UTF-16 LE + BOM), optional **page separators** when the PDF uses form-feed breaks (`\f`), **default output folder**, **batch recursive**, **search max files**, **OCR language**, and **offer OCR when extract is empty**. |
 | **OCR (images)** | Command **OCR Text from Image(s)** — Tesseract on PNG/JPEG/WebP/TIFF/BMP (multi-file). First run may download language data; keep network allowed if prompted. |
-| **Scanned PDFs** | PDFs with **no embedded text** trigger an optional hint: try **OCR from images** (export pages as images) or see repo README. |
+| **OCR scanned PDF** | Command **OCR Scanned PDF** — renders each page in a **webview** with **PDF.js** (browser canvas), then **Tesseract** on the extension host. No Node `canvas` build; good default path for image-only PDFs. Tune `pdfExtractor.ocrPdfMaxPages` and `pdfExtractor.ocrPdfRenderScale`. |
+| **Scanned PDFs** | When extract finds **no embedded text**, the extension can offer **OCR scanned PDF**, **OCR from images**, or docs — no external page export required for the webview path. |
 
 ## Explorer
 
@@ -25,6 +26,7 @@ Extract, search, batch-export, and preview PDF text inside VS Code. Optional **O
 - Rich Preview (Search)  
 - Extract Text to .txt File  
 - Copy PDF Text to Clipboard  
+- OCR Scanned PDF (render + Tesseract)  
 
 **On a folder**
 
@@ -41,6 +43,7 @@ Extract, search, batch-export, and preview PDF text inside VS Code. Optional **O
 | `pdfExtractor.batchExtract` | PDF Extractor Plus: Batch Extract Folder to .txt |
 | `pdfExtractor.searchWorkspacePdfs` | PDF Extractor Plus: Search Text in Workspace PDFs |
 | `pdfExtractor.ocrFromImages` | PDF Extractor Plus: OCR Text from Image(s) |
+| `pdfExtractor.ocrScannedPdf` | PDF Extractor Plus: OCR Scanned PDF (render + Tesseract) |
 
 ## Settings (`pdfExtractor.*`)
 
@@ -52,6 +55,8 @@ Extract, search, batch-export, and preview PDF text inside VS Code. Optional **O
 - **`searchMaxFiles`**: cap for batch + workspace search (1–2000)  
 - **`offerOcrWhenEmpty`**: show OCR hint when extract finds no text  
 - **`ocrLanguage`**: Tesseract language code (e.g. `eng`)
+- **`ocrPdfMaxPages`**: cap pages processed for **OCR scanned PDF** (1–500, default 150)
+- **`ocrPdfRenderScale`**: PDF.js render scale before max-dimension fit (0.5–3, default 1.4)
 
 ## Requirements
 
@@ -59,9 +64,13 @@ Extract, search, batch-export, and preview PDF text inside VS Code. Optional **O
 - **Workspace search** and **recursive batch** need a **folder** opened in VS Code.  
 - **OCR**: uses bundled Tesseract.js; first use of a language may require **network** for traineddata.
 
+## Developing this extension
+
+Clone the repo, open the `pdfextractor` folder in VS Code, run `npm install`, then **Run → Start Debugging** (F5) to launch an Extension Development Host. Commands live in `extension.js`; **OCR scanned PDF** uses a webview (bundled `pdfjs-dist` from `node_modules`) plus `tesseract.js` in the Node extension host. Package with `npm run vsce:package` (requires `@vscode/vsce`).
+
 ## Known limitations
 
-- **Native PDF OCR** (rasterize each page inside the extension without system tools) is not shipped: `canvas` failed to build in many CI/desktop setups. Use **image OCR** for scans, or pre-process PDFs externally.  
+- **OCR scanned PDF** is CPU/memory intensive on long documents; reduce **`ocrPdfMaxPages`** / **`ocrPdfRenderScale`** if needed. Encrypted or malformed PDFs may fail in PDF.js.  
 - Workspace search and batch are **CPU-heavy** on huge trees; tune **`searchMaxFiles`**.  
 - Layout-heavy PDFs may still have imperfect text order.
 

@@ -2,8 +2,8 @@
   "name": "pdf-extractor-plus",
   "publisher": "kathirvel-labs",
   "displayName": "PDF Extractor Plus",
-  "description": "Extract PDF text, batch to .txt, workspace search, rich preview, settings (encoding/line endings), and OCR from images (Tesseract).",
-  "version": "0.0.3",
+  "description": "Extract PDF text, batch to .txt, workspace search, rich preview, settings (encoding/line endings), OCR scanned PDF (PDF.js webview + Tesseract), and OCR from images.",
+  "version": "0.0.4",
   "icon": "images/logo1.ico",
   "license": "MIT",
   "repository": {
@@ -38,13 +38,20 @@
       "properties": {
         "pdfExtractor.lineEnding": {
           "type": "string",
-          "enum": ["auto", "lf", "crlf"],
+          "enum": [
+            "auto",
+            "lf",
+            "crlf"
+          ],
           "default": "auto",
           "description": "Line endings applied when saving extracted text. auto leaves line breaks as extracted."
         },
         "pdfExtractor.encoding": {
           "type": "string",
-          "enum": ["utf8", "utf16le"],
+          "enum": [
+            "utf8",
+            "utf16le"
+          ],
           "default": "utf8",
           "description": "Encoding for saved .txt files (UTF-16 includes a BOM)."
         },
@@ -84,6 +91,20 @@
           "type": "string",
           "default": "eng",
           "description": "Tesseract OCR language code (e.g. eng, fra, deu)."
+        },
+        "pdfExtractor.ocrPdfMaxPages": {
+          "type": "number",
+          "default": 150,
+          "minimum": 1,
+          "maximum": 500,
+          "description": "OCR scanned PDF: maximum pages to render and recognize (safety cap)."
+        },
+        "pdfExtractor.ocrPdfRenderScale": {
+          "type": "number",
+          "default": 1.4,
+          "minimum": 0.5,
+          "maximum": 3,
+          "description": "OCR scanned PDF: PDF.js viewport scale before fit-to-max resolution (higher = sharper, slower, more memory)."
         }
       }
     },
@@ -115,6 +136,10 @@
       {
         "command": "pdfExtractor.ocrFromImages",
         "title": "PDF Extractor Plus: OCR Text from Image(s)"
+      },
+      {
+        "command": "pdfExtractor.ocrScannedPdf",
+        "title": "PDF Extractor Plus: OCR Scanned PDF (render + Tesseract)"
       }
     ],
     "menus": {
@@ -138,6 +163,11 @@
           "command": "pdfExtractor.copyExtracted",
           "when": "resourceExtname == .pdf",
           "group": "pdf_extractor@4"
+        },
+        {
+          "command": "pdfExtractor.ocrScannedPdf",
+          "when": "resourceExtname == .pdf",
+          "group": "pdf_extractor@5"
         },
         {
           "command": "pdfExtractor.batchExtract",
@@ -165,6 +195,7 @@
   },
   "dependencies": {
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^4.10.38",
     "tesseract.js": "^5.1.1"
   }
 }

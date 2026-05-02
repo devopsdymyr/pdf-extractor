@@ -6,6 +6,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.0.4]
+
+- **OCR scanned PDF**: new command and Explorer menu — PDF.js renders pages in a webview (browser canvas), Tesseract.js OCR runs on the host; settings `ocrPdfMaxPages`, `ocrPdfRenderScale`.
+- When text extraction is empty, dialogs offer **OCR scanned PDF** alongside image OCR (extract, save, copy, rich preview flows).
+- Dependency: `pdfjs-dist` for webview rendering.
+
 ## [0.0.3]
 
 - Command Palette and file picker when no PDF is right-clicked.

@@ -1,7 +1,17 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const pdf = require('pdf-parse');
+
+function getNonce() {
+	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+	let out = '';
+	for (let i = 0; i < 32; i++) {
+		out += chars.charAt(Math.floor(Math.random() * chars.length));
+	}
+	return out;
+}
 
 function normalizeExtractedText(text) {
 	return text
@@ -118,6 +128,83 @@ function openRichPreviewWebview(context, title, fullText) {
 /**
  * @param {string} fullText
  */
+/**
+ * @param {vscode.Webview} webview
+ * @param {{ pdfFileUri: vscode.Uri; pdfLibUri: vscode.Uri; workerUri: vscode.Uri; scale: number; maxPages: number }} opts
+ */
+function buildPdfOcrWebviewHtml(webview, opts) {
+	const nonce = getNonce();
+	const csp = webview.cspSource;
+	const cfg = {
+		pdfLib: opts.pdfLibUri.toString(),
+		worker: opts.workerUri.toString(),
+		pdfUrl: opts.pdfFileUri.toString(),
+		scale: opts.scale,
+		maxPages: opts.maxPages
+	};
+	const cfgJson = JSON.stringify(cfg);
+	return `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${csp} 'unsafe-inline'; script-src 'nonce-${nonce}' ${csp}; img-src ${csp} blob: data:; font-src ${csp}; connect-src ${csp}; worker-src ${csp} blob:;">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF OCR (render)</title>
+<style>
+  body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background);
+    margin: 0; padding: 12px; font-size: 13px; line-height: 1.5; }
+  #status { opacity: 0.9; }
+</style>
+</head><body>
+<p id="status">Loading PDF.js and rendering pages for OCR…</p>
+<script type="module" nonce="${nonce}">
+const vscode = acquireVsCodeApi();
+const cfg = ${cfgJson};
+const statusEl = document.getElementById('status');
+function setStatus(t) { statusEl.textContent = t; }
+try {
+  const pdfjsLib = await import(cfg.pdfLib);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = cfg.worker;
+  const loadingTask = pdfjsLib.getDocument({ url: cfg.pdfUrl, withCredentials: false });
+  const doc = await loadingTask.promise;
+  const total = Math.min(doc.numPages || 0, cfg.maxPages);
+  if (total < 1) {
+    vscode.postMessage({ type: 'error', message: 'No pages to render in this PDF.' });
+  } else {
+    setStatus('Rendering page 1 / ' + total + '…');
+    for (let p = 1; p <= total; p++) {
+      setStatus('Rendering page ' + p + ' / ' + total + '…');
+      const page = await doc.getPage(p);
+      const base = page.getViewport({ scale: 1 });
+      const maxW = 2400;
+      const maxH = 3200;
+      const fit = Math.min(1, maxW / base.width, maxH / base.height);
+      const viewport = page.getViewport({ scale: cfg.scale * fit });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.floor(viewport.width));
+      canvas.height = Math.max(1, Math.floor(viewport.height));
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx) {
+        throw new Error('Canvas 2D context not available.');
+      }
+      const renderTask = page.render({ canvasContext: ctx, viewport });
+      await renderTask.promise;
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      const prefix = 'data:image/jpeg;base64,';
+      const base64 = dataUrl.startsWith(prefix) ? dataUrl.slice(prefix.length) : dataUrl.split(',')[1] || '';
+      vscode.postMessage({ type: 'pageJpeg', page: p, total, base64 });
+    }
+    vscode.postMessage({ type: 'done', pages: total });
+    setStatus('Sent ' + total + ' page image(s) to the extension for OCR. You can close this tab when finished.');
+  }
+} catch (e) {
+  const msg = (e && e.message) ? e.message : String(e);
+  vscode.postMessage({ type: 'error', message: msg });
+  setStatus('Error: ' + msg);
+}
+</script>
+</body></html>`;
+}
+
 function buildPreviewHtml(fullText) {
 	const payload = JSON.stringify(fullText);
 	return `<!DOCTYPE html>
@@ -211,11 +298,14 @@ async function runExtraction(context, uri, options = {}) {
 	if (!data.text.trim()) {
 		if (config.get('offerOcrWhenEmpty')) {
 			const pick = await vscode.window.showWarningMessage(
-				'No embedded text found (common for scanned PDFs). Try OCR from images, or export pages as PNG/JPEG.',
+				'No embedded text found (common for scanned PDFs). Use OCR scanned PDF (renders in-editor), OCR from image files, or export pages externally.',
+				'OCR scanned PDF',
 				'OCR from images',
 				'Learn more'
 			);
-			if (pick === 'OCR from images') {
+			if (pick === 'OCR scanned PDF') {
+				await ocrScannedPdf(context, pdfUri);
+			} else if (pick === 'OCR from images') {
 				await ocrFromImages(context);
 			} else if (pick === 'Learn more') {
 				vscode.env.openExternal(vscode.Uri.parse('https://github.com/devopsdymyr/pdf-extractor#readme'));
@@ -475,6 +565,211 @@ async function searchWorkspacePdfs(context) {
 
 /**
  * @param {vscode.ExtensionContext} context
+ * @param {string} combined
+ * @param {string} previewTitle
+ */
+async function presentOcrOutcome(context, combined, previewTitle) {
+	const config = getPdfConfig();
+	const normalized = normalizeExtractedText(combined).trim();
+	if (!normalized) {
+		vscode.window.showWarningMessage('OCR produced no text.');
+		return;
+	}
+	const choice = await vscode.window.showInformationMessage(
+		`OCR complete (${normalized.length.toLocaleString()} characters).`,
+		'Rich preview',
+		'Copy',
+		'Save as .txt'
+	);
+	if (choice === 'Rich preview') {
+		openRichPreviewWebview(context, previewTitle, normalized);
+	} else if (choice === 'Copy') {
+		await vscode.env.clipboard.writeText(normalized);
+		vscode.window.showInformationMessage('OCR text copied to clipboard.');
+	} else if (choice === 'Save as .txt') {
+		const saveUri = await vscode.window.showSaveDialog({
+			filters: { Text: ['txt'] },
+			saveLabel: 'Save OCR text'
+		});
+		if (saveUri) {
+			const lineMode = config.get('lineEnding') || 'auto';
+			const enc = config.get('encoding') || 'utf8';
+			await vscode.workspace.fs.writeFile(saveUri, encodeText(applyLineEndings(normalized, lineMode), enc));
+			vscode.window.showInformationMessage(`Saved: ${saveUri.fsPath}`);
+		}
+	}
+}
+
+/**
+ * Renders each PDF page in a webview (PDF.js + browser canvas), then runs Tesseract on the host — no Node canvas build.
+ * @param {vscode.ExtensionContext} context
+ * @param {vscode.Uri | undefined} uri
+ */
+async function ocrScannedPdf(context, uri) {
+	const pdfUri = uri?.fsPath && uri.fsPath.toLowerCase().endsWith('.pdf') ? uri : await resolvePdfUri(uri);
+	if (!pdfUri) {
+		vscode.window.showErrorMessage('No PDF selected. Pick a PDF or use Explorer on a .pdf file.');
+		return;
+	}
+
+	const config = getPdfConfig();
+	const lang = (config.get('ocrLanguage') || 'eng').trim() || 'eng';
+	const scale = Math.min(
+		3,
+		Math.max(0.5, Number(config.get('ocrPdfRenderScale')) || 1.4)
+	);
+	const maxPages = Math.min(
+		500,
+		Math.max(1, Math.floor(Number(config.get('ocrPdfMaxPages')) || 150))
+	);
+
+	const sessionId = crypto.randomUUID();
+	const sessionFolder = vscode.Uri.joinPath(context.globalStorageUri, 'pdf-ocr-work', sessionId);
+	const destPdf = vscode.Uri.joinPath(sessionFolder, 'input.pdf');
+	const pdfjsDir = vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'pdfjs-dist', 'build');
+	const pdfLibDisk = vscode.Uri.joinPath(pdfjsDir, 'pdf.mjs');
+	const workerDisk = vscode.Uri.joinPath(pdfjsDir, 'pdf.worker.mjs');
+
+	/** @type {vscode.Uri | null} */
+	let sessionToDelete = sessionFolder;
+
+	async function deleteSessionFolder() {
+		if (!sessionToDelete) {
+			return;
+		}
+		const target = sessionToDelete;
+		sessionToDelete = null;
+		try {
+			await vscode.workspace.fs.delete(target, { recursive: true, useTrash: false });
+		} catch {
+			// ignore
+		}
+	}
+
+	try {
+		await vscode.workspace.fs.createDirectory(sessionFolder);
+		await vscode.workspace.fs.copy(pdfUri, destPdf, { overwrite: true });
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		vscode.window.showErrorMessage(`Could not prepare PDF for OCR: ${msg}`);
+		return;
+	}
+
+	const panel = vscode.window.createWebviewPanel(
+		'pdfExtractorPdfOcr',
+		`OCR render: ${path.basename(pdfUri.fsPath)}`,
+		vscode.ViewColumn.Beside,
+		{
+			enableScripts: true,
+			retainContextWhenData: false,
+			localResourceRoots: [context.extensionUri, pdfjsDir, sessionFolder]
+		}
+	);
+
+	panel.onDidDispose(() => {
+		void deleteSessionFolder();
+	});
+
+	const wv = panel.webview;
+	const pdfFileUri = wv.asWebviewUri(destPdf);
+	const pdfLibUri = wv.asWebviewUri(pdfLibDisk);
+	const workerUri = wv.asWebviewUri(workerDisk);
+
+	const { createWorker } = require('tesseract.js');
+	let combined = '';
+
+	try {
+		await vscode.window.withProgress(
+			{
+				location: vscode.ProgressLocation.Notification,
+				title: 'PDF Extractor Plus: OCR scanned PDF',
+				cancellable: true
+			},
+			async (progress, token) => {
+				const worker = await createWorker(lang);
+				try {
+					await new Promise((resolve, reject) => {
+						const sub = wv.onDidReceiveMessage(
+							/** @param {{ type: string; message?: string; page?: number; total?: number; base64?: string }} msg */
+							async (msg) => {
+								if (!msg || typeof msg !== 'object') {
+									return;
+								}
+								if (msg.type === 'error') {
+									const errText = msg.message || 'Unknown render error';
+									sub.dispose();
+									reject(new Error(errText));
+									return;
+								}
+								if (msg.type === 'pageJpeg' && msg.base64) {
+									if (token.isCancellationRequested) {
+										sub.dispose();
+										reject(new Error('Cancelled'));
+										return;
+									}
+									const t = msg.total || 1;
+									const p = msg.page || 1;
+									progress.report({ message: `OCR page ${p}/${t}` });
+									try {
+										const buf = Buffer.from(msg.base64, 'base64');
+										const {
+											data: { text }
+										} = await worker.recognize(buf);
+										combined += (text || '').trim() + '\n\n';
+									} catch (err) {
+										sub.dispose();
+										reject(err instanceof Error ? err : new Error(String(err)));
+									}
+									return;
+								}
+								if (msg.type === 'done') {
+									sub.dispose();
+									resolve(undefined);
+								}
+							}
+						);
+						token.onCancellationRequested(() => {
+							sub.dispose();
+							try {
+								panel.dispose();
+							} catch {
+								// ignore
+							}
+							reject(new Error('Cancelled'));
+						});
+						wv.html = buildPdfOcrWebviewHtml(wv, {
+							pdfFileUri,
+							pdfLibUri,
+							workerUri,
+							scale,
+							maxPages
+						});
+					});
+				} finally {
+					await worker.terminate();
+				}
+			}
+		);
+		await deleteSessionFolder();
+		await presentOcrOutcome(context, combined, `OCR: ${path.basename(pdfUri.fsPath)}`);
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		if (msg === 'Cancelled') {
+			vscode.window.showInformationMessage('OCR scanned PDF cancelled.');
+		} else {
+			vscode.window.showErrorMessage(`OCR scanned PDF failed: ${msg}`);
+		}
+		await deleteSessionFolder();
+		try {
+			panel.dispose();
+		} catch {
+			// ignore
+		}
+	}
+}
+
+/**
+ * @param {vscode.ExtensionContext} context
  */
 async function ocrFromImages(context) {
 	const config = getPdfConfig();
@@ -522,35 +817,7 @@ async function ocrFromImages(context) {
 		return;
 	}
 
-	combined = normalizeExtractedText(combined).trim();
-	if (!combined) {
-		vscode.window.showWarningMessage('OCR produced no text.');
-		return;
-	}
-
-	const choice = await vscode.window.showInformationMessage(
-		`OCR complete (${combined.length.toLocaleString()} characters).`,
-		'Rich preview',
-		'Copy',
-		'Save as .txt'
-	);
-	if (choice === 'Rich preview') {
-		openRichPreviewWebview(context, 'OCR result', combined);
-	} else if (choice === 'Copy') {
-		await vscode.env.clipboard.writeText(combined);
-		vscode.window.showInformationMessage('OCR text copied to clipboard.');
-	} else if (choice === 'Save as .txt') {
-		const saveUri = await vscode.window.showSaveDialog({
-			filters: { Text: ['txt'] },
-			saveLabel: 'Save OCR text'
-		});
-		if (saveUri) {
-			const lineMode = config.get('lineEnding') || 'auto';
-			const enc = config.get('encoding') || 'utf8';
-			await vscode.workspace.fs.writeFile(saveUri, encodeText(applyLineEndings(combined, lineMode), enc));
-			vscode.window.showInformationMessage(`Saved: ${saveUri.fsPath}`);
-		}
-	}
+	await presentOcrOutcome(context, combined, 'OCR result');
 }
 
 /**
@@ -581,7 +848,16 @@ async function previewWebviewCommand(context, uri) {
 		return;
 	}
 	if (!data.text.trim()) {
-		vscode.window.showWarningMessage('No readable text — try OCR from images for scans.');
+		const pick = await vscode.window.showWarningMessage(
+			'No readable text in this PDF (typical for scans). Run OCR scanned PDF or OCR from images.',
+			'OCR scanned PDF',
+			'OCR from images'
+		);
+		if (pick === 'OCR scanned PDF') {
+			await ocrScannedPdf(context, pdfUri);
+		} else if (pick === 'OCR from images') {
+			await ocrFromImages(context);
+		}
 		return;
 	}
 	openRichPreviewWebview(context, path.basename(data.sourcePath), data.text);
@@ -617,7 +893,16 @@ function activate(context) {
 			return;
 		}
 		if (!data.text.trim()) {
-			vscode.window.showWarningMessage('No readable text was found in this PDF.');
+			const pick = await vscode.window.showWarningMessage(
+				'No embedded text in this PDF (often a scan). Try OCR scanned PDF or OCR from images.',
+				'OCR scanned PDF',
+				'OCR from images'
+			);
+			if (pick === 'OCR scanned PDF') {
+				await ocrScannedPdf(context, pdfUri);
+			} else if (pick === 'OCR from images') {
+				await ocrFromImages(context);
+			}
 			return;
 		}
 		await saveExtractedAsTxt(data.sourcePath, data.text);
@@ -648,7 +933,16 @@ function activate(context) {
 			return;
 		}
 		if (!data.text.trim()) {
-			vscode.window.showWarningMessage('No readable text was found in this PDF.');
+			const pick = await vscode.window.showWarningMessage(
+				'No embedded text in this PDF (often a scan). Try OCR scanned PDF or OCR from images.',
+				'OCR scanned PDF',
+				'OCR from images'
+			);
+			if (pick === 'OCR scanned PDF') {
+				await ocrScannedPdf(context, pdfUri);
+			} else if (pick === 'OCR from images') {
+				await ocrFromImages(context);
+			}
 			return;
 		}
 		try {
@@ -675,6 +969,10 @@ function activate(context) {
 
 	const ocrImages = vscode.commands.registerCommand('pdfExtractor.ocrFromImages', () => ocrFromImages(context));
 
+	const ocrScannedPdfCmd = vscode.commands.registerCommand('pdfExtractor.ocrScannedPdf', (uri) =>
+		ocrScannedPdf(context, uri)
+	);
+
 	context.subscriptions.push(
 		extract,
 		extractAndSave,
@@ -682,7 +980,8 @@ function activate(context) {
 		previewWebview,
 		batchExtractCmd,
 		searchPdfs,
-		ocrImages
+		ocrImages,
+		ocrScannedPdfCmd
 	);
 }
 
